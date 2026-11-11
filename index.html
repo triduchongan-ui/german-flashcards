@@ -11,6 +11,8 @@
       --primary: #2563eb;
       --text: #0f172a;
       --border: #e2e8f0;
+      --danger: #ef4444;
+      --warning: #f59e0b;
     }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -38,6 +40,10 @@
     .btn-submit {
       width: 100%; padding: 12px; background: var(--primary);
       color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer;
+    }
+    .btn-cancel {
+      width: 100%; padding: 8px; background: #94a3b8;
+      color: white; border: none; border-radius: 6px; font-size: 14px; cursor: pointer; margin-top: 8px;
     }
 
     .flashcard {
@@ -73,6 +79,28 @@
     .sync-status {
       font-size: 12px; text-align: center; margin-bottom: 10px; color: #64748b;
     }
+
+    /* List Management Styling */
+    .word-list-title {
+      font-size: 18px; font-weight: bold; margin: 25px 0 10px 0;
+      border-bottom: 2px solid var(--border); padding-bottom: 8px;
+    }
+    .word-item {
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 12px; margin-bottom: 10px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .word-info { flex: 1; padding-right: 10px; }
+    .word-de { font-weight: bold; color: var(--primary); font-size: 16px; }
+    .word-vi { color: #16a34a; font-size: 14px; }
+    .word-ex { font-style: italic; color: #64748b; font-size: 12px; }
+    .word-actions { display: flex; gap: 6px; }
+    .btn-action {
+      padding: 6px 10px; border: none; border-radius: 4px;
+      color: white; font-size: 12px; cursor: pointer; font-weight: bold;
+    }
+    .btn-edit { background: var(--warning); }
+    .btn-delete { background: var(--danger); }
   </style>
 
   <!-- Firebase App & Realtime Database SDK -->
@@ -83,7 +111,7 @@
 
   <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('study')">Ôn tập</button>
-    <button class="tab-btn" onclick="switchTab('add')">Thêm từ mới</button>
+    <button class="tab-btn" onclick="switchTab('add')">Thêm / Quản lý từ</button>
   </div>
 
   <div class="sync-status" id="syncStatus">🔄 Đang kết nối dữ liệu mây...</div>
@@ -95,6 +123,9 @@
 
   <div id="addView" class="view">
     <form id="addCardForm">
+      <h3 id="formTitle" style="margin-top:0;">Thêm từ vựng mới</h3>
+      <input type="hidden" id="editCardId" value="">
+      
       <div class="form-group">
         <label for="german">Từ vựng / Cụm từ tiếng Đức:</label>
         <input type="text" id="german" placeholder="vd: die Sprachprüfung" required>
@@ -107,12 +138,15 @@
         <label for="example">Ví dụ (nếu có):</label>
         <textarea id="example" rows="2" placeholder="vd: Ich bereite mich auf die Sprachprüfung vor."></textarea>
       </div>
-      <button type="submit" class="btn-submit">Lưu vào bộ thẻ (Tự đồng bộ)</button>
+      <button type="submit" id="submitBtn" class="btn-submit">Lưu vào bộ thẻ (Tự đồng bộ)</button>
+      <button type="button" id="cancelEditBtn" class="btn-cancel" style="display:none;" onclick="resetForm()">Hủy sửa</button>
     </form>
+
+    <div class="word-list-title">Danh sách từ đã tạo (<span id="totalWordCount">0</span>)</div>
+    <div id="wordListContainer"></div>
   </div>
 
   <script>
-    // Mã cấu hình Firebase của bạn
     const firebaseConfig = {
       apiKey: "AIzaSyD2qytj3TPX4n5TXnGr-JJor9pqO_up4N4",
       authDomain: "german-anki-app.firebaseapp.com",
@@ -124,7 +158,6 @@
       measurementId: "G-BJ18Z55WFP"
     };
 
-    // Khởi tạo Firebase
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
     const cardsRef = db.ref('anki_cards');
@@ -133,12 +166,12 @@
     let currentCard = null;
     let isAnswerShown = false;
 
-    // Lắng nghe dữ liệu đồng bộ thời gian thực từ Cloud
     cardsRef.on('value', (snapshot) => {
       const data = snapshot.val();
       cards = data ? Object.values(data) : [];
       document.getElementById('syncStatus').textContent = '🟢 Đã đồng bộ với Cloud';
       renderStudyCard();
+      renderWordList();
     });
 
     function createCard(german, vietnamese, example) {
@@ -177,6 +210,7 @@
       } else {
         document.querySelectorAll('.tab-btn')[1].classList.add('active');
         document.getElementById('addView').classList.add('active');
+        renderWordList();
       }
     }
 
@@ -265,22 +299,98 @@
       renderStudyCard();
     }
 
+    // Render danh sách quản lý từ vựng
+    function renderWordList() {
+      const container = document.getElementById('wordListContainer');
+      document.getElementById('totalWordCount').textContent = cards.length;
+
+      if (cards.length === 0) {
+        container.innerHTML = '<div style="text-align:center; color:#64748b; padding:15px;">Chưa có từ vựng nào trong danh sách.</div>';
+        return;
+      }
+
+      // Sắp xếp từ mới tạo lên đầu
+      const sortedCards = [...cards].reverse();
+
+      container.innerHTML = sortedCards.map(card => `
+        <div class="word-item">
+          <div class="word-info">
+            <div class="word-de">${card.german}</div>
+            <div class="word-vi">${card.vietnamese}</div>
+            ${card.example ? `<div class="word-ex">${card.example}</div>` : ''}
+          </div>
+          <div class="word-actions">
+            <button class="btn-action btn-edit" onclick="editCard(${card.id})">Sửa</button>
+            <button class="btn-action btn-delete" onclick="deleteCard(${card.id})">Xóa</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // Xử lý Thêm / Cập nhật thẻ
     document.getElementById('addCardForm').addEventListener('submit', (e) => {
       e.preventDefault();
       const german = document.getElementById('german').value.trim();
       const vietnamese = document.getElementById('vietnamese').value.trim();
       const example = document.getElementById('example').value.trim();
+      const editId = document.getElementById('editCardId').value;
 
       if (!german || !vietnamese) return;
 
-      cards.push(createCard(german, vietnamese, example));
-      saveCardsToCloud();
+      if (editId) {
+        // Cập nhật từ vựng cũ
+        const index = cards.findIndex(c => c.id == editId);
+        if (index !== -1) {
+          cards[index].german = german;
+          cards[index].vietnamese = vietnamese;
+          cards[index].example = example;
+        }
+      } else {
+        // Thêm từ vựng mới
+        cards.push(createCard(german, vietnamese, example));
+      }
 
+      saveCardsToCloud();
+      resetForm();
+    });
+
+    // Mở chế độ chỉnh sửa
+    function editCard(id) {
+      const card = cards.find(c => c.id == id);
+      if (!card) return;
+
+      document.getElementById('editCardId').value = card.id;
+      document.getElementById('german').value = card.german;
+      document.getElementById('vietnamese').value = card.vietnamese;
+      document.getElementById('example').value = card.example || '';
+
+      document.getElementById('formTitle').textContent = 'Chỉnh sửa từ vựng';
+      document.getElementById('submitBtn').textContent = 'Lưu thay đổi';
+      document.getElementById('cancelEditBtn').style.display = 'block';
+
+      // Cuộn lên đầu form
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // Xóa thẻ từ vựng
+    function deleteCard(id) {
+      if (confirm('Bạn có chắc chắn muốn xóa từ này khỏi bộ thẻ?')) {
+        cards = cards.filter(c => c.id != id);
+        saveCardsToCloud();
+      }
+    }
+
+    // Reset Form về trạng thái thêm mới
+    function resetForm() {
+      document.getElementById('editCardId').value = '';
       document.getElementById('german').value = '';
       document.getElementById('vietnamese').value = '';
       document.getElementById('example').value = '';
-      alert('Đã thêm từ mới & tự động đồng bộ!');
-    });
+
+      document.getElementById('formTitle').textContent = 'Thêm từ vựng mới';
+      document.getElementById('submitBtn').textContent = 'Lưu vào bộ thẻ (Tự đồng bộ)';
+      document.getElementById('cancelEditBtn').style.display = 'none';
+    }
   </script>
 </body>
 </html>
