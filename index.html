@@ -224,14 +224,28 @@
       }
     }
 
-    function speakGerman(text, e) {
-      if (e) e.stopPropagation();
-      if ('speechSynthesis' in window) {
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'de-DE';
-        window.speechSynthesis.speak(utterance);
-      }
+   function speakGerman(text, e) {
+  if (e) e.stopPropagation();
+  if ('speechSynthesis' in window) {
+    // Hủy các câu đang đọc dở trước đó
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'de-DE';
+    utterance.rate = 0.9; // Tốc độ đọc (0.9 giúp đọc rõ chữ hơn cho người mới học)
+
+    // Lấy danh sách giọng đọc hỗ trợ trên máy
+    const voices = window.speechSynthesis.getVoices();
+    // Ưu tiên chọn giọng đọc tiếng Đức chất lượng cao (Google/Microsoft/Apple)
+    const germanVoice = voices.find(v => v.lang.includes('de') && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Microsoft')));
+    
+    if (germanVoice) {
+      utterance.voice = germanVoice;
     }
+
+    window.speechSynthesis.speak(utterance);
+  }
+}
 
     // Thuật toán ôn tập ngắt quãng SM-2 (Chuẩn Anki)
     function updateCardSM2(card, quality) {
