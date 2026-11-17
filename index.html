@@ -222,7 +222,6 @@
     function getDueCards() {
       const now = Date.now();
       return cards.filter(card => {
-        // Tương thích với dữ liệu cũ dùng dueDate (YYYY-MM-DD)
         if (card.dueTimestamp) {
           return card.dueTimestamp <= now;
         } else if (card.dueDate) {
@@ -265,8 +264,6 @@
       }
     }
 
-    // Cập nhật lịch ôn tập theo mốc thời gian mới:
-    // 0: Quên (10 phút) | 3: Khó (12 tiếng) | 4: Tốt (1 ngày) | 5: Dễ (2 ngày)
     function updateCardSchedule(card, quality) {
       const MINUTE = 60 * 1000;
       const HOUR = 60 * MINUTE;
@@ -307,6 +304,15 @@
       }
     }
 
+    // Chuẩn hóa chuỗi để bỏ qua viết hoa/thường, khoảng trắng thừa và dấu câu
+    function normalizeAnswer(str) {
+      return String(str)
+        .toLowerCase()                     // Không phân biệt chữ hoa / chữ thường
+        .replace(/[.,!?;:]+/g, ' ')        // Thay các dấu câu bằng khoảng trắng
+        .replace(/\s+/g, ' ')              // Gom nhiều khoảng trắng liền nhau thành 1 dấu cách
+        .trim();                           // Xóa khoảng trắng thừa ở 2 đầu
+    }
+
     function escapeHtml(str) {
       return String(str)
         .replace(/&/g, "&amp;")
@@ -335,8 +341,9 @@
 
       currentCard = dueCards[0];
 
-      // Kiểm tra khớp chính xác Từ vựng / Cụm từ tiếng Đức
-      const isExactMatch = userTypedAnswer === currentCard.german.trim();
+      // So sánh đáp án đã được chuẩn hóa (bỏ qua viết hoa, khoảng trắng & dấu câu)
+      const isExactMatch = userTypedAnswer.length > 0 && 
+                           normalizeAnswer(userTypedAnswer) === normalizeAnswer(currentCard.german);
 
       container.innerHTML = `
         <div class="flashcard">
