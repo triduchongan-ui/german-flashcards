@@ -77,6 +77,17 @@
     }
     .answer-input:focus { border-color: var(--primary); }
 
+    .german-char-bar {
+      display: flex; gap: 8px; justify-content: center; margin-top: 2px;
+    }
+    .char-btn {
+      padding: 6px 15px; border: 1px solid #cbd5e1; border-radius: 6px;
+      background: #f8fafc; font-weight: bold; font-size: 16px; cursor: pointer;
+      color: #1e293b; transition: background-color 0.15s;
+    }
+    .char-btn:hover { background: #e2e8f0; }
+    .char-btn:active { background: #cbd5e1; }
+
     .check-result {
       width: 100%; padding: 12px; border-radius: 8px; margin-bottom: 14px;
       font-weight: 600; font-size: 15px; box-sizing: border-box;
@@ -212,12 +223,7 @@
     <div id="statBox" class="stat-box">Đang tải dữ liệu...</div>
     <div id="cardContainer"></div>
   </div>
-<div style="display:flex; gap:8px; justify-content:center; margin-top:4px;">
-              <button type="button" onclick="insertGermanChar('ä')" style="padding:6px 14px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-weight:bold; cursor:pointer;">ä</button>
-              <button type="button" onclick="insertGermanChar('ö')" style="padding:6px 14px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-weight:bold; cursor:pointer;">ö</button>
-              <button type="button" onclick="insertGermanChar('ü')" style="padding:6px 14px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-weight:bold; cursor:pointer;">ü</button>
-              <button type="button" onclick="insertGermanChar('ß')" style="padding:6px 14px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-weight:bold; cursor:pointer;">ß</button>
-            </div>
+
   <div id="addView" class="view">
     <form id="addCardForm">
       <h3 id="formTitle" style="margin-top:0;">Thêm từ vựng mới</h3>
@@ -364,6 +370,18 @@
         isSubmittingRating = false;
         document.getElementById('syncStatus').textContent = '🔴 Lỗi lưu dữ liệu: ' + err.message;
       });
+    }
+
+    // === CHÈN KÝ TỰ TIẾNG ĐỨC NHANH (ä, ö, ü, ß) ===
+    function insertGermanChar(char) {
+      const inputEl = document.getElementById('userAnswerInput');
+      if (!inputEl) return;
+      const start = inputEl.selectionStart ?? inputEl.value.length;
+      const end = inputEl.selectionEnd ?? inputEl.value.length;
+      const val = inputEl.value;
+      inputEl.value = val.substring(0, start) + char + val.substring(end);
+      inputEl.focus();
+      inputEl.setSelectionRange(start + char.length, start + char.length);
     }
 
     // === CÁC HÀM XỬ LÝ CHỌN NHIỀU THẺ ===
@@ -671,7 +689,7 @@
 
       const cardToUpdate = { ...currentCard };
       currentCard = null;
-      activeStudyCardId = null; // Mở khóa sang thẻ tiếp theo sau khi đã chấm điểm xong
+      activeStudyCardId = null;
       isAnswerShown = false;
       userTypedAnswer = '';
 
@@ -694,6 +712,10 @@
     function normalizeAnswer(str) {
       return String(str)
         .toLowerCase()
+        .replace(/ä/g, 'ae')
+        .replace(/ö/g, 'oe')
+        .replace(/ü/g, 'ue')
+        .replace(/ß/g, 'ss')
         .replace(/[.,!?;:/\\()\-]+/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
@@ -738,7 +760,6 @@
 
       statBox.textContent = `Thẻ cần ôn hiện tại: ${dueCards.length} / Tổng số thẻ: ${cards.length}`;
 
-      // Khóa nguyên thẻ đang làm dở nếu người dùng chưa bấm đánh giá
       let targetCard = null;
       if (activeStudyCardId) {
         targetCard = cards.find(c => String(c.id) === String(activeStudyCardId));
@@ -784,6 +805,12 @@
               autocomplete="off"
               onkeydown="if(event.key === 'Enter') { event.preventDefault(); checkTypedAnswer(); }"
             >
+            <div class="german-char-bar">
+              <button type="button" class="char-btn" onclick="insertGermanChar('ä')">ä</button>
+              <button type="button" class="char-btn" onclick="insertGermanChar('ö')">ö</button>
+              <button type="button" class="char-btn" onclick="insertGermanChar('ü')">ü</button>
+              <button type="button" class="char-btn" onclick="insertGermanChar('ß')">ß</button>
+            </div>
           ` : `
             <div class="check-result ${isExactMatch ? 'check-correct' : 'check-wrong'}">
               ${isExactMatch 
