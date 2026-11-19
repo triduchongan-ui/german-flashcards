@@ -34,7 +34,7 @@
     
     .form-group { margin-bottom: 15px; }
     label { display: block; margin-bottom: 5px; font-weight: bold; }
-    input, textarea {
+    input[type="text"], input[type="number"], textarea {
       width: 100%; padding: 10px; border: 1px solid var(--border);
       border-radius: 6px; box-sizing: border-box; font-size: 14px;
     }
@@ -112,14 +112,71 @@
       border-top: 2px solid var(--primary);
     }
     .word-list-title {
-      font-size: 18px; font-weight: bold; margin-bottom: 15px; color: var(--primary);
+      font-size: 18px; font-weight: bold; margin-bottom: 12px; color: var(--primary);
     }
+
+    /* Thanh công cụ chọn nhiều thẻ */
+    .bulk-toolbar {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .select-all-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: bold;
+      color: #1e3a8a;
+      cursor: pointer;
+      margin: 0;
+    }
+    .card-checkbox {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+      accent-color: var(--primary);
+      flex-shrink: 0;
+    }
+    .bulk-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .btn-bulk {
+      padding: 6px 10px;
+      border: none;
+      border-radius: 6px;
+      color: white;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .btn-bulk:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .btn-bulk-upgrade { background: #0f766e; }
+    .btn-bulk-delete { background: var(--danger); }
+
     .word-item {
       background: var(--card-bg); border: 1px solid var(--border);
       border-radius: 8px; padding: 12px; margin-bottom: 10px;
-      display: flex; justify-content: space-between; align-items: center;
+      display: flex; justify-content: space-between; align-items: center; gap: 10px;
+      transition: background-color 0.15s, border-color 0.15s;
     }
-    .word-info { flex: 1; padding-right: 10px; }
+    .word-item.selected {
+      background: #eff6ff;
+      border-color: var(--primary);
+    }
+    .word-info { flex: 1; padding-right: 6px; }
     .word-de { font-weight: bold; color: var(--text); font-size: 16px; }
     .word-vi { color: #16a34a; font-size: 14px; font-weight: 500; }
     .word-ex { font-style: italic; color: #64748b; font-size: 12px; }
@@ -169,7 +226,7 @@
         <textarea id="example" rows="2" placeholder="vd: Ich bereite mich auf die Sprachprüfung vor."></textarea>
       </div>
 
-      <!-- Khung chỉnh tiến độ thủ công khi sửa thẻ bị reset trạng thái -->
+      <!-- Khung chỉnh tiến độ thủ công khi sửa thẻ -->
       <div id="progressEditBox" class="form-row" style="display:none; background:#f1f5f9; padding:10px; border-radius:6px; margin-bottom:15px;">
         <div>
           <label for="editReps" style="font-size:12px;">Số lần đã thuộc (reps):</label>
@@ -187,12 +244,28 @@
 
     <div class="word-list-section">
       <div class="word-list-title">📋 Danh sách từ đã lưu (<span id="totalWordCount">0</span>)</div>
+      
+      <!-- Thanh điều khiển chọn nhiều thẻ -->
+      <div id="bulkToolbar" class="bulk-toolbar" style="display:none;">
+        <label class="select-all-label">
+          <input type="checkbox" id="selectAllCheckbox" class="card-checkbox" onchange="toggleSelectAll(this.checked)">
+          <span id="selectedCountText">Chọn tất cả (0)</span>
+        </label>
+        <div class="bulk-actions">
+          <button type="button" id="btnBulkUpgrade" class="btn-bulk btn-bulk-upgrade" disabled onclick="bulkUpgradeSelected()">
+            ⚡ Nâng cấp (➔ 3 lần)
+          </button>
+          <button type="button" id="btnBulkDelete" class="btn-bulk btn-bulk-delete" disabled onclick="bulkDeleteSelected()">
+            🗑️ Xóa đã chọn
+          </button>
+        </div>
+      </div>
+
       <div id="wordListContainer"></div>
     </div>
   </div>
 
   <script>
-    // Cấu hình Firebase của bạn
     const firebaseConfig = {
       apiKey: "AIzaSyD2qytj3TPX4n5TXnGr-JJor9pqO_up4N4",
       authDomain: "german-anki-app.firebaseapp.com",
@@ -215,30 +288,41 @@
     const EASY_BONUS = 1.3;
 
     let cards = [];
+    let selectedCardIds = new Set(); // Lưu danh sách ID các thẻ đang được tích chọn
     let currentCard = null;
     let isAnswerShown = false;
     let userTypedAnswer = '';
 
-    // Lắng nghe dữ liệu từ Cloud: Đọc nguyên vẹn tiến độ đã lưu trên Firebase
     cardsRef.on('value', (snapshot) => {
       const data = snapshot.val();
-      const rawCards = data ? Object.values(data) : [];
+      if (data) {
+        cards = Object.entries(data).map(([key, card]) => ({
+          ...card,
+          id: String(card.id || key),
+          reps: Number(card.reps || 0),
+          interval: Number(card.interval || 0),
+          ease: Number(card.ease || DEFAULT_EASE)
+        }));
+      } else {
+        cards = [];
+      }
 
-      cards = rawCards.map(card => ({
-        ...card,
-        reps: Number(card.reps || 0),
-        interval: Number(card.interval || 0),
-        ease: Number(card.ease || DEFAULT_EASE)
-      }));
+      // Loại bỏ các ID đã bị xóa khỏi danh sách đang chọn
+      const existingIds = new Set(cards.map(c => c.id));
+      selectedCardIds.forEach(id => {
+        if (!existingIds.has(id)) selectedCardIds.delete(id);
+      });
 
       document.getElementById('syncStatus').textContent = '🟢 Đã đồng bộ với Cloud (Bảo toàn tiến độ)';
       renderStudyCard();
       renderWordList();
+    }, (error) => {
+      document.getElementById('syncStatus').textContent = '🔴 Lỗi kết nối Cloud: ' + error.message;
     });
 
     function createCard(german, vietnamese, example) {
       return {
-        id: Date.now(),
+        id: String(Date.now()),
         german,
         vietnamese,
         example,
@@ -249,10 +333,95 @@
       };
     }
 
-    // Lưu cập nhật từng thẻ riêng lẻ lên Firebase (không ghi đè mất tiến độ các thẻ khác)
     function saveSingleCardToCloud(card) {
       document.getElementById('syncStatus').textContent = '⏳ Đang lưu tiến độ lên Cloud...';
-      cardsRef.child(card.id).update(card);
+      const cleanCard = { ...card, id: String(card.id) };
+      cardsRef.child(cleanCard.id).update(cleanCard).then(() => {
+        document.getElementById('syncStatus').textContent = '🟢 Đã đồng bộ với Cloud (Bảo toàn tiến độ)';
+      });
+    }
+
+    // === CÁC HÀM XỬ LÝ CHỌN NHIỀU THẺ ===
+    function toggleSelectCard(id, isChecked) {
+      const strId = String(id);
+      if (isChecked) {
+        selectedCardIds.add(strId);
+      } else {
+        selectedCardIds.delete(strId);
+      }
+      updateBulkToolbarUI();
+      
+      // Cập nhật màu viền của item đang chọn
+      const itemEl = document.getElementById(`word-item-${strId}`);
+      if (itemEl) {
+        itemEl.classList.toggle('selected', isChecked);
+      }
+    }
+
+    function toggleSelectAll(isChecked) {
+      if (isChecked) {
+        cards.forEach(c => selectedCardIds.add(String(c.id)));
+      } else {
+        selectedCardIds.clear();
+      }
+      renderWordList();
+    }
+
+    function updateBulkToolbarUI() {
+      const count = selectedCardIds.size;
+      const selectAllCb = document.getElementById('selectAllCheckbox');
+      const countText = document.getElementById('selectedCountText');
+      const btnUpgrade = document.getElementById('btnBulkUpgrade');
+      const btnDelete = document.getElementById('btnBulkDelete');
+
+      if (selectAllCb) {
+        selectAllCb.checked = cards.length > 0 && count === cards.length;
+        selectAllCb.indeterminate = count > 0 && count < cards.length;
+      }
+      if (countText) {
+        countText.textContent = count > 0 ? `Đã chọn ${count} thẻ` : `Chọn tất cả`;
+      }
+      if (btnUpgrade) btnUpgrade.disabled = count === 0;
+      if (btnDelete) btnDelete.disabled = count === 0;
+    }
+
+    function bulkUpgradeSelected() {
+      const count = selectedCardIds.size;
+      if (count === 0) return;
+      if (!confirm(`Nâng cấp ${count} thẻ đang chọn lên trạng thái "Đã thuộc 3 lần" (mốc 3 ngày)?`)) return;
+
+      document.getElementById('syncStatus').textContent = '⏳ Đang nâng cấp các thẻ đã chọn...';
+      const updates = {};
+      selectedCardIds.forEach(id => {
+        const card = cards.find(c => c.id === id);
+        if (card) {
+          updates[`${id}/reps`] = 3;
+          updates[`${id}/interval`] = 3;
+          updates[`${id}/ease`] = card.ease || DEFAULT_EASE;
+        }
+      });
+
+      cardsRef.update(updates).then(() => {
+        selectedCardIds.clear();
+        renderWordList();
+      });
+    }
+
+    function bulkDeleteSelected() {
+      const count = selectedCardIds.size;
+      if (count === 0) return;
+      if (!confirm(`⚠️ Bạn có chắc chắn muốn XÓA VĨNH VIỄN ${count} thẻ đang chọn khỏi bộ thẻ không?`)) return;
+
+      document.getElementById('syncStatus').textContent = '⏳ Đang xóa các thẻ đã chọn...';
+      const updates = {};
+      selectedCardIds.forEach(id => {
+        updates[id] = null; // Gán null trong update() của Firebase sẽ xóa node đó
+      });
+
+      cardsRef.update(updates).then(() => {
+        selectedCardIds.clear();
+        renderWordList();
+      });
     }
 
     function getDueCards() {
@@ -494,29 +663,44 @@
 
     function renderWordList() {
       const container = document.getElementById('wordListContainer');
+      const toolbar = document.getElementById('bulkToolbar');
       document.getElementById('totalWordCount').textContent = cards.length;
 
       if (cards.length === 0) {
+        toolbar.style.display = 'none';
         container.innerHTML = '<div style="text-align:center; color:#64748b; padding:15px;">Chưa có từ vựng nào trong danh sách.</div>';
         return;
       }
 
+      toolbar.style.display = 'flex';
       const sortedCards = [...cards].reverse();
 
-      container.innerHTML = sortedCards.map(card => `
-        <div class="word-item">
-          <div class="word-info">
-            <div class="word-de">${escapeHtml(card.german)}</div>
-            <div class="word-vi">${escapeHtml(card.vietnamese)}</div>
-            ${card.example ? `<div class="word-ex">${escapeHtml(card.example)}</div>` : ''}
-            <div class="word-meta">Chuỗi đúng: ${card.reps || 0} lần • ${formatDueStatus(card)}</div>
+      container.innerHTML = sortedCards.map(card => {
+        const safeId = escapeHtml(String(card.id));
+        const isSelected = selectedCardIds.has(String(card.id));
+        return `
+          <div id="word-item-${safeId}" class="word-item ${isSelected ? 'selected' : ''}">
+            <input 
+              type="checkbox" 
+              class="card-checkbox" 
+              ${isSelected ? 'checked' : ''} 
+              onchange="toggleSelectCard('${safeId}', this.checked)"
+            >
+            <div class="word-info">
+              <div class="word-de">${escapeHtml(card.german)}</div>
+              <div class="word-vi">${escapeHtml(card.vietnamese)}</div>
+              ${card.example ? `<div class="word-ex">${escapeHtml(card.example)}</div>` : ''}
+              <div class="word-meta">Chuỗi đúng: ${card.reps || 0} lần • ${formatDueStatus(card)}</div>
+            </div>
+            <div class="word-actions">
+              <button type="button" class="btn-action btn-edit" onclick="editCard('${safeId}')">Sửa</button>
+              <button type="button" class="btn-action btn-delete" onclick="deleteCard('${safeId}')">Xóa</button>
+            </div>
           </div>
-          <div class="word-actions">
-            <button class="btn-action btn-edit" onclick="editCard(${card.id})">Sửa</button>
-            <button class="btn-action btn-delete" onclick="deleteCard(${card.id})">Xóa</button>
-          </div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
+
+      updateBulkToolbarUI();
     }
 
     document.getElementById('addCardForm').addEventListener('submit', (e) => {
@@ -529,7 +713,7 @@
       if (!german || !vietnamese) return;
 
       if (editId) {
-        const card = cards.find(c => c.id == editId);
+        const card = cards.find(c => String(c.id) === String(editId));
         if (card) {
           card.german = german;
           card.vietnamese = vietnamese;
@@ -547,10 +731,10 @@
     });
 
     function editCard(id) {
-      const card = cards.find(c => c.id == id);
+      const card = cards.find(c => String(c.id) === String(id));
       if (!card) return;
 
-      document.getElementById('editCardId').value = card.id;
+      document.getElementById('editCardId').value = String(card.id);
       document.getElementById('german').value = card.german;
       document.getElementById('vietnamese').value = card.vietnamese;
       document.getElementById('example').value = card.example || '';
@@ -567,7 +751,8 @@
 
     function deleteCard(id) {
       if (confirm('Bạn có chắc chắn muốn xóa từ này khỏi bộ thẻ?')) {
-        cardsRef.child(id).remove();
+        selectedCardIds.delete(String(id));
+        cardsRef.child(String(id)).remove();
       }
     }
 
